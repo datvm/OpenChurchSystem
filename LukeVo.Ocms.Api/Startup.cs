@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LukeVo.Ocms.Api.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -26,6 +27,11 @@ namespace LukeVo.Ocms.Api
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
+
+            var appSettings = new AppSettings();
+            this.Configuration.Bind(appSettings);
+
+            services.AddSingleton(appSettings);
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

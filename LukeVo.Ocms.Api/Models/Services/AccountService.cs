@@ -1,4 +1,7 @@
-﻿using ServiceSharp;
+﻿using LukeVo.Ocms.Api.Models.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using ServiceSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,6 +10,13 @@ using System.Threading.Tasks;
 
 namespace LukeVo.Ocms.Api.Models.Services
 {
+
+    public static class AccountServiceConstants
+    {
+
+        public const string SysAdminClaimType = "SysAdmin";
+
+    }
 
     public interface IAccountService : IService
     {
@@ -21,11 +31,25 @@ namespace LukeVo.Ocms.Api.Models.Services
         /// </summary>
         bool ValidatePassword(string enteredPassword, string hashed);
 
+        /// <summary>
+        /// Validate the Login credential
+        /// </summary>
+        Task<User> GetLoginUserAsync(string email, string enteredPassword);
+
+        Task InitializeAdminAccount(bool force);
+
     }
 
-    public class AccountService : IAccountService, IService<IAccountService>
+    public class AccountService : BaseService, IAccountService, IService<IAccountService>
     {
-        private const int HashIteration = 10000;
+        const int HashIteration = 10000;
+        
+        AppSettings appSettings;
+
+        public AccountService(OcmsContext dbContext, AppSettings appSettings) : base(dbContext)
+        {
+            this.appSettings = appSettings;
+        }
 
         public string HashPassword(string rawPassword)
         {
@@ -66,8 +90,77 @@ namespace LukeVo.Ocms.Api.Models.Services
                 }
 
             }
-            
+
             return true;
+        }
+
+        public async Task InitializeAdminAccount(bool force)
+        {
+            var adminEmail = this.appSettings.InitialAdmin.Email;
+            var adminUser = await this.GetUserByEmailAsync(adminEmail);
+
+            // Only create/update if there is no admin account,
+            // or Force to update the password
+            if (adminUser == null || force)
+            {
+                if (adminUser == null)
+                {
+                    adminUser = new User()
+                    {
+                        Email = adminEmail,
+                        Name = adminEmail,
+                    };
+
+                    this.DbContext.Add(adminUser);
+                }
+
+                var passwordHash = this.HashPassword(this.appSettings.InitialAdmin.Password);
+                adminUser.PasswordHash = passwordHash;
+
+                await this.DbContext.SaveChangesAsync();
+            }
+
+            // Set Claim if not
+            var adminClaim = await this.DbContext.UserClaim
+                .FirstOrDefaultAsync(q => q.UserId == adminUser.Id && q.Type == AccountServiceConstants.SysAdminClaimType);
+
+            if (adminClaim == null)
+            {
+                adminClaim = new UserClaim()
+                {
+                    UserId = adminUser.Id,
+                    Type = AccountServiceConstants.SysAdminClaimType,
+                    Value = "1",
+                };
+                this.DbContext.UserClaim.Add(adminClaim);
+
+                await this.DbContext.SaveChangesAsync();
+            }
+        }
+
+        public async Task<User> GetLoginUserAsync(string email, string enteredPassword)
+        {
+            var user = await this.GetUserByEmailAsync(email);
+
+            if (user == null)
+            {
+                return null;
+            }
+
+            if (this.ValidatePassword(enteredPassword, user.PasswordHash))
+            {
+                return user;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        private async Task<User> GetUserByEmailAsync(string email)
+        {
+            return await this.DbContext.User
+                .FirstOrDefaultAsync(q => q.Email == email);
         }
 
     }
