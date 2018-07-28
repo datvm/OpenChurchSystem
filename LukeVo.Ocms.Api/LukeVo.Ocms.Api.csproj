@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <Folder Include="Controllers\" />
-    <Folder Include="Models\Services\" />
+    <Folder Include="Models\Entities\" />
     <Folder Include="wwwroot\" />
   </ItemGroup>
 
