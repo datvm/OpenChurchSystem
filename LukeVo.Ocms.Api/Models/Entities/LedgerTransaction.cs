@@ -12,5 +12,10 @@ namespace LukeVo.Ocms.Api.Models.Entities
         public int CreatedByUserId { get; set; }
         public DateTime CreatedTime { get; set; }
         public bool Deleted { get; set; }
+
+        public LedgerBook Book { get; set; }
+        public User CreatedByUser { get; set; }
+        public LedgerAccount CreditAccount { get; set; }
+        public LedgerAccount DebitAccount { get; set; }
     }
 }

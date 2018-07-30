@@ -31,6 +31,28 @@ namespace LukeVo.Ocms.Test.Api.Models.Services
                 basicFixture.AppSettings);
         }
 
+        #region Passwords
+
+        [Theory]
+        [InlineData("123", "1oeL3uF0DWr4qxVa2kYMDbfXRdbe/qRpxrwm0H5fh5d/OVan")]
+        [InlineData("456", "+Fmf9Mek0YoYMeNklQBAFnPgW5fUn/FDErdMD/RnbfGbPQAG")]
+        [InlineData("Luke", "B33tuIiCiMM/lXLTqRcBFd2MMYdg4lCljYoLvFRs6jA7AEsm")]
+        [InlineData("abc123!@#", "Naw4tT4BZzZjfRXO+UXlSNqFKM+YhhQM9qPT95xrX2bz7iWG")]
+        public void ValidatePassword_ShouldMatch(string password, string hash)
+        {
+            Assert.True(this.accountService.ValidatePassword(password, hash));
+        }
+
+        [Theory]
+        [InlineData("123", "+Fmf9Mek0YoYMeNklQBAFnPgW5fUn/FDErdMD/RnbfGbPQAG")]
+        [InlineData("456", "1oeL3uF0DWr4qxVa2kYMDbfXRdbe/qRpxrwm0H5fh5d/OVan")]
+        [InlineData("Luke", "Naw4tT4BZzZjfRXO+UXlSNqFKM+YhhQM9qPT95xrX2bz7iWG")]
+        [InlineData("abc123!@#", "B33tuIiCiMM/lXLTqRcBFd2MMYdg4lCljYoLvFRs6jA7AEsm")]
+        public void ValidatePassword_ShouldNotMatch(string password, string hash)
+        {
+            Assert.False(this.accountService.ValidatePassword(password, hash));
+        }
+
         [Theory]
         [InlineData("123")]
         [InlineData("456")]
@@ -41,20 +63,50 @@ namespace LukeVo.Ocms.Test.Api.Models.Services
             var result = accountService.HashPassword(password);
 
             this.output.WriteLine(result);
-            this.output.WriteLine(result.Length.ToString());
-
+            
             Assert.True(accountService.ValidatePassword(password, result));
             Assert.False(accountService.ValidatePassword(password + "foo", result));
         }
+
+        #endregion
+
+        #region Admin Account
 
         [Fact]
         public async Task InitializeAdminAccount_ShouldCreate()
         {
             await this.DeleteAdminAccountIfExist();
 
-            await this.accountService.InitializeAdminAccount(false);
+            await this.accountService.InitializeAdminAccountAsync(false);
 
             await this.ValidateAdminAccountAsync(this.basicFixture.AppSettings.InitialAdmin.Password);
+        }
+
+        [Fact]
+        public async Task InitializeAdminAccount_ShouldIgnore()
+        {
+            await this.DeleteAdminAccountIfExist();
+
+
+            await this.accountService.InitializeAdminAccountAsync(false);
+
+            await this.ValidateAdminAccountAsync(this.basicFixture.AppSettings.InitialAdmin.Password);
+        }
+
+        private async Task CreateAdmin(string password)
+        {
+            await this.DeleteAdminAccountIfExist();
+
+            var hashedPassword = this.accountService.HashPassword(password);
+
+            var adminUser = new User()
+            {
+                Email = this.basicFixture.AppSettings.InitialAdmin.Email,
+                PasswordHash = hashedPassword,
+            };
+
+            this.basicFixture.DbContext.User.Add(adminUser);
+
         }
 
         private async Task DeleteAdminAccountIfExist()
@@ -107,6 +159,8 @@ namespace LukeVo.Ocms.Test.Api.Models.Services
 
             return adminUser;
         }
+
+        #endregion
 
     }
 

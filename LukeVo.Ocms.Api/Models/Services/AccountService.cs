@@ -1,10 +1,12 @@
-﻿using LukeVo.Ocms.Api.Models.Entities;
+﻿using AspNetCore.Invoke;
+using LukeVo.Ocms.Api.Models.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using ServiceSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 
@@ -36,14 +38,18 @@ namespace LukeVo.Ocms.Api.Models.Services
         /// </summary>
         Task<User> GetLoginUserAsync(string email, string enteredPassword);
 
-        Task InitializeAdminAccount(bool force);
+        Task<bool> InitializeAdminAccountAsync(bool force);
+
+        Task<IEnumerable<UserClaim>> GetUserClaimsAsync(int userId);
+
+        Task ChangePasswordAsync(int userId, string oldPassword, string newPassword);
 
     }
 
     public class AccountService : BaseService, IAccountService, IService<IAccountService>
     {
         const int HashIteration = 10000;
-        
+
         AppSettings appSettings;
 
         public AccountService(OcmsContext dbContext, AppSettings appSettings) : base(dbContext)
@@ -94,13 +100,14 @@ namespace LukeVo.Ocms.Api.Models.Services
             return true;
         }
 
-        public async Task InitializeAdminAccount(bool force)
+        public async Task<bool> InitializeAdminAccountAsync(bool force)
         {
             var adminEmail = this.appSettings.InitialAdmin.Email;
-            var adminUser = await this.GetUserByEmailAsync(adminEmail);
+            var adminUser = await this.GetUserByEmailAsync(adminEmail, true);
 
             // Only create/update if there is no admin account,
             // or Force to update the password
+            var result = false;
             if (adminUser == null || force)
             {
                 if (adminUser == null)
@@ -109,6 +116,7 @@ namespace LukeVo.Ocms.Api.Models.Services
                     {
                         Email = adminEmail,
                         Name = adminEmail,
+                        CreatedTime = DateTime.UtcNow,
                     };
 
                     this.DbContext.Add(adminUser);
@@ -118,10 +126,13 @@ namespace LukeVo.Ocms.Api.Models.Services
                 adminUser.PasswordHash = passwordHash;
 
                 await this.DbContext.SaveChangesAsync();
+
+                result = true;
             }
 
             // Set Claim if not
             var adminClaim = await this.DbContext.UserClaim
+                .AsNoTracking()
                 .FirstOrDefaultAsync(q => q.UserId == adminUser.Id && q.Type == AccountServiceConstants.SysAdminClaimType);
 
             if (adminClaim == null)
@@ -136,11 +147,13 @@ namespace LukeVo.Ocms.Api.Models.Services
 
                 await this.DbContext.SaveChangesAsync();
             }
+
+            return result;
         }
 
         public async Task<User> GetLoginUserAsync(string email, string enteredPassword)
         {
-            var user = await this.GetUserByEmailAsync(email);
+            var user = await this.GetUserByEmailAsync(email, false);
 
             if (user == null)
             {
@@ -157,10 +170,61 @@ namespace LukeVo.Ocms.Api.Models.Services
             }
         }
 
-        private async Task<User> GetUserByEmailAsync(string email)
+        public async Task<IEnumerable<Claim>> GetUserClaimsAsync(int userId)
         {
-            return await this.DbContext.User
-                .FirstOrDefaultAsync(q => q.Email == email);
+            var user = await this.GetUserByIdAsync(userId, false);
+
+            if (user == null)
+            {
+                throw new ServiceException("Invalid User Id", System.Net.HttpStatusCode.BadRequest);
+            }
+
+            var result = new List<Claim>();
+
+            result.Add(new Claim("id", userId.ToString()));
+            result.Add(new Claim("email", userId.ToString()));
+
+            var specialClaims = await this.DbContext.UserClaim
+                .Where(q => q.UserId == userId)
+                .ToListAsync();
+
+            result.AddRange(specialClaims
+                .Select(q => new Claim(q.Type, q.Value)));
+
+            return result;
+        }
+
+        public async Task ChangePasswordAsync(int userId, string oldPassword, string newPassword)
+        {
+            throw new NotImplementedException();
+        }
+
+        private async Task<User> GetUserByEmailAsync(string email, bool track)
+        {
+            var query = this.DbContext.User
+                .Where(q => q.Email == email);
+
+            if (!track)
+            {
+                query = query.AsNoTracking();
+            }
+
+            return await query
+                .FirstOrDefaultAsync();
+        }
+
+        private async Task<User> GetUserByIdAsync(int id, bool track)
+        {
+            var query = this.DbContext.User
+                .Where(q => q.Id == id);
+
+            if (!track)
+            {
+                query = query.AsNoTracking();
+            }
+
+            return await query
+                .FirstOrDefaultAsync();
         }
 
     }
